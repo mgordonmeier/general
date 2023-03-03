@@ -1,0 +1,25 @@
+@import url('https://fonts.googleapis.com/css2?family=Fuzzy+Bubbles&family=Gloria+Hallelujah&family=Indie+Flower&family=Reenie+Beanie&family=Rock+Salt&display=swap');
+
+.App {
+  text-align: center;
+  margin: 30px;
+}
+
+.heading {
+  font-family: Rock Salt;
+}
+
+.grid-main {
+  display: grid;
+  grid-template-columns: auto auto;
+}
+
+.grid-child h3 {
+font-family: Fuzzy Bubbles;
+font-weight: 700;
+}
+
+.grid-child p {
+  font-family: Reenie Beanie;
+  font-weight: 300;
+  }
