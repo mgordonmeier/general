@@ -113,7 +113,7 @@ welcome_menu() {
 				set_custom_search_pattern
 
 				echo "---------------------------"
-				echo "Performing custom search...
+				echo "Performing custom search..."
 				echo "---------------------------"
 				echo "Processing file $file" | tee -a "$LOG_FILE"
 
