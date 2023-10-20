@@ -1,0 +1,353 @@
+#!/bin/bash
+
+# set -x
+
+# Temp file to keep track of processed files
+PROCESSED_FILES_TEMP=$(mktemp) || { echo "Failed to create temp file"; exit 1; }
+
+# Get the directory of the current script
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+
+# Get the current date
+DATE=$(date '+%Y-%m-%d_%H-%M-%S')
+CURRENT_DATE_COMPRESSED=$(date '+%Y%m%d')
+
+# Base output directory
+BASE_OUTPUT_DIR="$SCRIPT_DIR/DECAF_output/$CURRENT_DATE_COMPRESSED"
+mkdir -p "$BASE_OUTPUT_DIR"
+
+# Email pattern
+EMAIL_PATTERN="\@?MAGELLANHEALTH\.COM|[a-zA-Z0-9._%+-]+@?MAGELLANHEALTH\.COM"
+
+# DIG on-call pattern
+DIG_PATTERN="DIG on-call"
+
+# Set exit code
+file_not_found_exit_code=10
+
+# Ask the user for the input file's path
+echo "Please enter the full path to the file or dir:"
+read file
+
+# Function to evaluate variables in a line
+evaluate_variable() {
+    local line="$1"
+    # Use eval to dynamically resolve the variables
+    line=$(eval echo "$line")
+    echo "$line"
+}
+
+# Welcome menu function
+welcome_menu() {
+
+	# Use a while loop to continue displaying the menu until a valid option is selected
+	while true; do
+
+		# Display the menu options
+		echo "--------------------------------------------------------"
+		echo "Welcome to DECAF: All the insights, none of the jitters!"
+		echo "--------------------------------------------------------"
+		echo "What would you like to do?"
+		echo "1) Scan for Emails and DIG On-Call" 
+		echo "2) Create Summary Report File"
+		echo "3) Do Both" 
+		echo "4) Exit"
+
+		read -p "Enter your choice: " choice
+
+		# Act based on the user's choice using a case statement
+		case $choice in
+			1)
+				# Add code and check_file function (welcome_menu will be called in conditional that checks if input is file)
+				echo "-----------------------------------"
+				echo "Scanning for emails and DIG on-call"
+				echo "-----------------------------------"
+				echo "Processing file $file" | tee -a "$LOG_FILE"
+		
+				# Call check_file function on input file
+    			check_file "$file" 0
+				
+				echo -e "Done.\nOutput files are saved in the directory:\n$OUTPUT_DIR\n"
+
+				break
+				;;
+			2)
+				# Add code and generate_summary_report function
+				echo "-------------------------"
+				echo "Generating summary report"
+				echo "-------------------------"
+				generate_summary_report "$file"
+				
+				echo -e "Done.\nOutput files are saved in the directory:\n$OUTPUT_DIR\n"
+
+				break
+				;;
+			3)
+				# Add code, check_file, and generate_summary_report functions (welcome_menu will be called in conditional that checks if input is a file)
+				echo "-------------------------------------------------------------"
+				echo "Scanning for emails/DIG on-call and generating summary report"
+				echo "-------------------------------------------------------------"
+				echo "Processing file $file" | tee -a "$LOG_FILE"
+		
+				# Call check_file function on input file
+    			check_file "$file" 0
+				echo "-------------------------"
+				echo "Generating summary report"
+				echo "-------------------------"
+				generate_summary_report "$file"
+
+				echo -e "Done.\nOutput files are saved in the directory:\n$OUTPUT_DIR\n"
+				
+				break
+				;;
+			4)
+				echo "Exiting."
+				break
+				;;
+			*)
+				echo "Invalid option. Please try again."
+				;;
+		esac
+	done
+}
+
+# Function to recursively check and process files
+function check_file() {
+	local file="$1"    # File to check
+	local depth="$2"   # Recursion depth
+	
+	# Default recursion depth if not provided
+	if [ -z "$depth" ]; then
+		depth=0
+	fi
+
+	# Check for maximum recursion depth to prevent looping
+	if [ "$depth" -ge 5 ]; then
+		echo "Reached maximum recursion depth for file $file" | tee -a "$LOG_FILE"
+		return
+	fi 
+	
+	# Check if the file is empty
+	if [ ! -s "$file" ]; then 
+		echo "Error: The file $file is empty. Skipping..." | tee -a "$LOG_FILE"
+		return
+	fi
+
+	# Mark the file as processed
+	echo "$file" >> "$PROCESSED_FILES_TEMP"
+	
+	# Read the lines of the file onto an array
+	mapfile -t lines < "$file"
+	
+	# Initialize the line number
+	line_num=0
+
+	# Process each line
+	for line in "${lines[@]}"; do
+	
+		# Check if the line starts with a '#' character
+		if [[ $line =~ ^\s*# ]]; then
+			# Skip the line if it's a comment
+			continue
+		fi
+	
+		# Increment line_num
+		((line_num++))
+		
+		# Check for emails
+		grep -o -i -E "$EMAIL_PATTERN" <<< "$line" | while read -r email; do
+			echo "Email: $email, File: $file, Line: $line_num" >> "$EMAIL_OUTPUT_FILE"
+		done
+		
+		# Check for DIG On-call
+		grep -o -i "$DIG_PATTERN" <<< "$line" | while read -r match; do
+			echo "Match: $match, File: $file, Line: $line_num" >> "$DIG_OUTPUT_FILE"
+		done
+	
+		# Check for shell variable expression or path/to/file
+		if [[ $line =~ (\$\{?[a-zA-Z_]+}?[a-zA-Z0-9_/.-]*\.[a-zA-Z]+) ]]; then
+			expression_to_evaluate="${BASH_REMATCH[1]}"
+
+			# Resolve the shell variable expression
+			resolved_path=$(eval echo "$expression_to_evaluate")
+			
+			# Check if the resolved path has at least one '/' character other than the first one 
+			if [[ ${resolved_path:1} != */* ]]; then 
+				# echo "Ignoring invalid file path: $resolved_path" 
+				continue # Skip to the next iteration 
+			fi
+			
+			# Check if the resolved path is a file, if so: process it
+			if [[ -f "$resolved_path" ]]; then
+				# Check if the resolved path has already been processed
+				if grep -qF "$resolved_path" "$PROCESSED_FILES_TEMP"; then
+					echo "Skipping already processed file: $resolved_path" | tee -a "$LOG_FILE"
+					continue
+				elif [[ "$resolved_path" == *"incoming"* || "$resolved_path" == *"joblog"* || "$resolved_path" == *".STEP" ]]; then
+                    echo "Skipping incoming/joblog/.STEP file: $resolved_path" | tee -a "$LOG_FILE"
+					continue
+				else 
+					echo "Processing mentioned file $resolved_path" | tee -a "$LOG_FILE"
+				fi 
+				
+				# Call this function recursively to check the contents of the file
+				check_file "$resolved_path" "$((depth + 1))"
+			else
+				echo "Warning: Mentioned file $resolved_path from $file line:$line_num not found. Skipping." | tee -a "$LOG_FILE"
+			fi
+		fi
+	done
+}
+
+# Function to generate summary report
+generate_summary_report() {
+	local jobfile="$1"
+	
+	# Check if the file is empty
+	if [ ! -s "$file" ]; then 
+		echo "Error: The file $file is empty. Skipping..." | tee -a "$LOG_FILE"
+		return
+	fi
+	
+	# Read the lines of the file onto an array
+	mapfile -t lines < "$jobfile"
+	
+	# If file is a .job, generate summary report
+    if [[ $file == *.job ]]; then
+        for line in "${lines[@]}"; do
+            if [[ $line == "Jobout="* ]]; then
+				jobout_line=${line#Jobout=}
+                jobout_path=$(evaluate_variable "$jobout_line")
+
+               
+            fi
+        done
+    fi
+	
+    local job_name=$(basename "$jobfile" .job)
+    local summary_file="${OUTPUT_DIR}/${job_name}_summary_report.txt"
+	
+	# Define base variables
+	base_log_dir="$SCRIPT_DIR/joblog/"
+	date_for_log=$(date +"%Y%m%d")
+	
+	# Set up tries and max_tries variables
+	max_tries=30
+	tries=0
+	
+	# Loop until we find an existing log file
+	while true; do
+		log_dir="$base_log_dir/$date_for_log"
+		most_recent_log=$(ls -t1 "${log_dir}/${job_name}.job."* 2> /dev/null | head -n 1)
+		
+		if [ -f "$most_recent_log" ]; then
+			echo "Found log file: $most_recent_log"
+			break
+		else
+			echo "No log file found for $date_for_log, decrementing date by one day."
+		fi
+		
+		# Increment try counter
+		((tries++))
+		
+		# Exit if we hit the max number of tries
+		if [ $tries -ge $max_tries ]; then
+			echo "Reached maximum number of tries ($max_tries). Exiting loop."
+			break
+		fi
+		
+		date_for_log=$(date -d "$date_for_log - 1 day" +"%Y%m%d")
+	done
+	
+	# Get path for jobout log file based on most_recent_log
+	most_recent_log_dir=$(dirname "$most_recent_log")
+	jobout_base_name=$(basename "$jobout_path")
+	actual_jobout_path="${most_recent_log_dir}/${jobout_base_name}"
+
+
+    # Create or append to the summary file
+    {
+        echo "Generating summary for $job_name"
+        echo "Timestamp: $DATE"
+
+		# Extract info from the most recent joblog file
+        if [ -f "$most_recent_log" ]; then
+            echo "--- Most Recent Job Log Data $most_recent_log ---"
+            cat "$most_recent_log"
+            echo "--- End of Most Recent Job Log Data ---"
+        else
+            echo "Most recent job log not found."
+        fi
+
+        # Extract info from Jobout log file
+        if [[ -f "$actual_jobout_path" ]]; then
+            echo "--- Jobout Data ---"
+            cat "$actual_jobout_path"
+            echo "--- End of Jobout Data ---"
+        else
+            echo "Jobout log not found."
+        fi
+
+    } > "$summary_file"
+}
+
+# Function for cleaning up temporary files
+cleanup() {
+	rm -f "$PROCESSED_FILES_TEMP"
+}
+
+# Check if the file exists and is a regular file
+if [[ -f "$file" ]]; then
+    # Extract file name with extension
+    FILE_NAME=$(basename "$file")
+
+    # Create specific output directory named after the input file
+    OUTPUT_DIR="${BASE_OUTPUT_DIR}/${FILE_NAME}_${DATE}"
+    mkdir -p "$OUTPUT_DIR"
+
+    # Create output file names
+    EMAIL_OUTPUT_FILE="${OUTPUT_DIR}/${FILE_NAME}_email_${DATE}.txt"
+    DIG_OUTPUT_FILE="${OUTPUT_DIR}/${FILE_NAME}_DIG_oncall_${DATE}.txt"
+    LOG_FILE="${OUTPUT_DIR}/${FILE_NAME}_Scan_Results_${DATE}.txt"
+
+    welcome_menu
+	
+elif [[ -d "$file" ]]; then
+	# Check if directory contains .job files
+	job_files=$(find "$file" -type f -name "*.job")
+	if [[ -z "$job_files" ]]; then
+		echo "Directory $file does not contain any .job files"
+	else
+		echo "Directory $file contains.job files. Processing"
+		
+		# Create consolidated output directory for multiple jobs
+		CONSO_OUTPUT_DIR="${BASE_OUTPUT_DIR}/consolidated_jobs_${DATE}"
+		mkdir -p "$CONSO_OUTPUT_DIR"
+		
+		# Create consolidated output file names
+		CONSO_EMAIL_OUTPUT_FILE="${CONSO_OUTPUT_DIR}/consolidated_email_${DATE}.txt"
+		CONSO_DIG_OUTPUT_FILE="${CONSO_OUTPUT_DIR}/consolidated_DIG_oncall_${DATE}.txt"
+		CONSO_LOG_FILE="${CONSO_OUTPUT_DIR}/consolidated_scan_results_${DATE}.txt"
+		
+		# Process each .job file
+		while IFS= read -r job_file; do
+			echo -e "\nProcessing $job_file\n" | tee -a "$CONSO_LOG_FILE"
+			
+			# Use the consolidated output file names for the check_file function
+			OUTPUT_DIR="$CONSO_OUTPUT_DIR"
+			EMAIL_OUTPUT_FILE="$CONSO_EMAIL_OUTPUT_FILE"
+			DIG_OUTPUT_FILE="$CONSO_DIG_OUTPUT_FILE"
+			LOG_FILE="$CONSO_LOG_FILE"
+			check_file "$job_file" 0
+		done <<< "$job_files"
+		
+		echo -e "\n\nDone.\nOutput files are saved in directory:\n$CONSO_OUTPUT_DIR\n"
+	fi
+
+else
+    echo "$file does not exist or contain .job files. Please enter a valid file path."
+    exit $file_not_found_exit_code
+fi
+
+# Trap to call cleanup when script exists
+trap cleanup EXIT
