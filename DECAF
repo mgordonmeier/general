@@ -19,6 +19,9 @@ mkdir -p "$BASE_OUTPUT_DIR"
 # Email pattern
 EMAIL_PATTERN="\@?MAGELLANHEALTH\.COM|[a-zA-Z0-9._%+-]+@?MAGELLANHEALTH\.COM"
 
+# Custom search pattern
+CUSTOM_SEARCH_PATTERN=""
+
 # DIG on-call pattern
 DIG_PATTERN="DIG on-call"
 
@@ -37,6 +40,10 @@ evaluate_variable() {
     echo "$line"
 }
 
+set_custom_search_pattern() {
+	read -p "Enter what you are searching for: " CUSTOM_SEARCH_PATTERN
+}
+
 # Welcome menu function
 welcome_menu() {
 
@@ -51,7 +58,8 @@ welcome_menu() {
 		echo "1) Scan for Emails and DIG On-Call" 
 		echo "2) Create Summary Report File"
 		echo "3) Do Both" 
-		echo "4) Exit"
+		echo "4) Custom Search"
+		echo "5) Exit"
 
 		read -p "Enter your choice: " choice
 
@@ -90,7 +98,7 @@ welcome_menu() {
 				echo "Processing file $file" | tee -a "$LOG_FILE"
 		
 				# Call check_file function on input file
-    			check_file "$file" 0
+    				check_file "$file" 0
 				echo "-------------------------"
 				echo "Generating summary report"
 				echo "-------------------------"
@@ -100,7 +108,23 @@ welcome_menu() {
 				
 				break
 				;;
-			4)
+			4) 
+				# Set the custom search pattern
+				set_custom_search_pattern
+
+				echo "---------------------------"
+				echo "Performing custom search...
+				echo "---------------------------"
+				echo "Processing file $file" | tee -a "$LOG_FILE"
+
+				# Call check_file function on input file
+				check_file "$file" 0
+
+				echo -e "Done.\nOutput files are saved in the directory:\n$OUTPUT_DIR\n"
+				
+				break
+				;;
+			5)
 				echo "Exiting."
 				break
 				;;
@@ -153,17 +177,24 @@ function check_file() {
 	
 		# Increment line_num
 		((line_num++))
+
+		# Check for custom search pattern
+		if [[ -n "$CUSTOM_SEARCH_PATTERN" ]]; then
+			grep -o -i "$CUSTOM_SEARCH_PATTERN" <<< "$line" | while read -r match; do
+				echo "Custom Match: $match --File: $file --Line: $line_num" >> "${OUTPUT_DIR}/${FILE_NAME}_custom_search_${DATE}.txt"
+			done
+		else
+			# Check for emails
+			grep -o -i -E "$EMAIL_PATTERN" <<< "$line" | while read -r email; do
+				echo "Email: $email, File: $file, Line: $line_num" >> "$EMAIL_OUTPUT_FILE"
+			done
 		
-		# Check for emails
-		grep -o -i -E "$EMAIL_PATTERN" <<< "$line" | while read -r email; do
-			echo "Email: $email, File: $file, Line: $line_num" >> "$EMAIL_OUTPUT_FILE"
-		done
-		
-		# Check for DIG On-call
-		grep -o -i "$DIG_PATTERN" <<< "$line" | while read -r match; do
-			echo "Match: $match, File: $file, Line: $line_num" >> "$DIG_OUTPUT_FILE"
-		done
-	
+			# Check for DIG On-call
+			grep -o -i "$DIG_PATTERN" <<< "$line" | while read -r match; do
+				echo "Match: $match, File: $file, Line: $line_num" >> "$DIG_OUTPUT_FILE"
+			done
+		fi
+
 		# Check for shell variable expression or path/to/file
 		if [[ $line =~ (\$\{?[a-zA-Z_]+}?[a-zA-Z0-9_/.-]*\.[a-zA-Z]+) ]]; then
 			expression_to_evaluate="${BASH_REMATCH[1]}"
