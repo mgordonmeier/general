@@ -146,7 +146,7 @@ function check_file() {
 	fi
 
 	# Check for maximum recursion depth to prevent looping
-	if [ "$depth" -ge 5 ]; then
+	if [ "$depth" -ge 10 ]; then
 		echo "Reached maximum recursion depth for file $file" | tee -a "$LOG_FILE"
 		return
 	fi 
@@ -354,13 +354,13 @@ if [[ -f "$file" ]]; then
 elif [[ -d "$file" ]]; then
 	# Create consolidated output directory for multiple jobs
 	DIR_NAME=$(basename "$file")
-	CONSO_OUTPUT_DIR="${BASE_OUTPUT_DIR}/consolidated_${DIR_NAME}_${DATE}"
-	mkdir -p "$CONSO_OUTPUT_DIR"
+	OUTPUT_DIR="${BASE_OUTPUT_DIR}/consolidated_${DIR_NAME}_${DATE}"
+	mkdir -p "$OUTPUT_DIR"
 		
 	# Create consolidated output file names
-	CONSO_EMAIL_OUTPUT_FILE="${CONSO_OUTPUT_DIR}/consolidated_email_${DATE}.txt"
-	CONSO_DIG_OUTPUT_FILE="${CONSO_OUTPUT_DIR}/consolidated_DIG_oncall_${DATE}.txt"
-	CONSO_LOG_FILE="${CONSO_OUTPUT_DIR}/consolidated_scan_results_${DATE}.txt"
+	EMAIL_OUTPUT_FILE="${OUTPUT_DIR}/consolidated_${DIR_NAME}_email_${DATE}.txt"
+	DIG_OUTPUT_FILE="${OUTPUT_DIR}/consolidated_${DIR_NAME}_DIG_oncall_${DATE}.txt"
+	LOG_FILE="${OUTPUT_DIR}/consolidated_${DIR_NAME}_scan_results_${DATE}.txt"
 		
 	# Directly call the check_file function
 	check_file "$file" 0
