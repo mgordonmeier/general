@@ -365,7 +365,7 @@ elif [[ -d "$file" ]]; then
 	# Directly call the check_file function
 	check_file "$file" 0
 		
-	echo -e "\n\nDone.\nOutput files are saved in directory:\n$CONSO_OUTPUT_DIR\n"
+	echo -e "\n\nDone.\nOutput files are saved in directory:\n$OUTPUT_DIR\n"
 
 else
     echo "$file does not exist. Please enter a valid file path."
