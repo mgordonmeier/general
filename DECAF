@@ -151,10 +151,18 @@ function check_file() {
 		return
 	fi 
 	
-	# Check if the file is empty
-	if [ ! -s "$file" ]; then 
-		echo "Error: The file $file is empty. Skipping..." | tee -a "$LOG_FILE"
-		return
+	# Process directory
+	if [[ -d "$file" ]]; then
+        	for sub_file in "$file"/*; do
+            		check_file "$sub_file" "$((depth + 1))"
+        	done
+        	return
+    	fi
+
+	# Check if the file is empty or not a regular file
+	if [ ! -s "$file" ] || [ ! -f "$file" ]; then 
+        	echo "Error: The file $file is empty or not a regular file. Skipping..." | tee -a "$LOG_FILE"
+        	return
 	fi
 
 	# Mark the file as processed
@@ -344,39 +352,23 @@ if [[ -f "$file" ]]; then
     welcome_menu
 	
 elif [[ -d "$file" ]]; then
-	# Check if directory contains .job files
-	job_files=$(find "$file" -type f -name "*.job")
-	if [[ -z "$job_files" ]]; then
-		echo "Directory $file does not contain any .job files"
-	else
-		echo "Directory $file contains.job files. Processing"
+	# Create consolidated output directory for multiple jobs
+	DIR_NAME=$(basename "$file")
+	CONSO_OUTPUT_DIR="${BASE_OUTPUT_DIR}/consolidated_${DIR_NAME}_${DATE}"
+	mkdir -p "$CONSO_OUTPUT_DIR"
 		
-		# Create consolidated output directory for multiple jobs
-		CONSO_OUTPUT_DIR="${BASE_OUTPUT_DIR}/consolidated_jobs_${DATE}"
-		mkdir -p "$CONSO_OUTPUT_DIR"
+	# Create consolidated output file names
+	CONSO_EMAIL_OUTPUT_FILE="${CONSO_OUTPUT_DIR}/consolidated_email_${DATE}.txt"
+	CONSO_DIG_OUTPUT_FILE="${CONSO_OUTPUT_DIR}/consolidated_DIG_oncall_${DATE}.txt"
+	CONSO_LOG_FILE="${CONSO_OUTPUT_DIR}/consolidated_scan_results_${DATE}.txt"
 		
-		# Create consolidated output file names
-		CONSO_EMAIL_OUTPUT_FILE="${CONSO_OUTPUT_DIR}/consolidated_email_${DATE}.txt"
-		CONSO_DIG_OUTPUT_FILE="${CONSO_OUTPUT_DIR}/consolidated_DIG_oncall_${DATE}.txt"
-		CONSO_LOG_FILE="${CONSO_OUTPUT_DIR}/consolidated_scan_results_${DATE}.txt"
+	# Directly call the check_file function
+	check_file "$file" 0
 		
-		# Process each .job file
-		while IFS= read -r job_file; do
-			echo -e "\nProcessing $job_file\n" | tee -a "$CONSO_LOG_FILE"
-			
-			# Use the consolidated output file names for the check_file function
-			OUTPUT_DIR="$CONSO_OUTPUT_DIR"
-			EMAIL_OUTPUT_FILE="$CONSO_EMAIL_OUTPUT_FILE"
-			DIG_OUTPUT_FILE="$CONSO_DIG_OUTPUT_FILE"
-			LOG_FILE="$CONSO_LOG_FILE"
-			check_file "$job_file" 0
-		done <<< "$job_files"
-		
-		echo -e "\n\nDone.\nOutput files are saved in directory:\n$CONSO_OUTPUT_DIR\n"
-	fi
+	echo -e "\n\nDone.\nOutput files are saved in directory:\n$CONSO_OUTPUT_DIR\n"
 
 else
-    echo "$file does not exist or contain .job files. Please enter a valid file path."
+    echo "$file does not exist. Please enter a valid file path."
     exit $file_not_found_exit_code
 fi
 
